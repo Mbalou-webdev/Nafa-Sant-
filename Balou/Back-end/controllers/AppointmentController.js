@@ -69,16 +69,33 @@ export const createAppointment = async (req, res) => {
   }
 };
 
-// Récupérer les rendez-vous du patient connecté
+// Récupérer les rendez-vous du patient connecté (sécurisé)
 export const getUserAppointments = async (req, res) => {
   try {
-    const userId = req.user?.id || req.params.userId;
+    const requestedUserId = req.params.userId;
+    const authenticatedUserId = req.user.id;
+    const userRole = req.user.role;
+
+    // Vérification de sécurité : un utilisateur ne peut voir que ses propres RDV (sauf admin)
+    if (userRole !== 'admin' && requestedUserId !== authenticatedUserId) {
+      console.log('❌ Tentative d\'accès non autorisée:', {
+        requestedUserId,
+        authenticatedUserId,
+        userRole
+      });
+      return res.status(403).json({ 
+        error: "Accès refusé. Vous ne pouvez voir que vos propres rendez-vous." 
+      });
+    }
+
+    const userId = requestedUserId || authenticatedUserId;
 
     if (!userId) {
       return res.status(400).json({ error: "ID utilisateur manquant" });
     }
 
     const appointments = await Appointment.find({ userId }).sort({ date: -1, time: -1 });
+    console.log('✅ Rendez-vous récupérés pour utilisateur:', userId, 'Nombre:', appointments.length);
     res.status(200).json(appointments);
   } catch (error) {
     console.error('Erreur lors de la récupération des rendez-vous :', error);
@@ -99,13 +116,10 @@ export const getAppointments = async (req, res) => {
   }
 };
 
-// Mettre à jour le statut, motif ou diagnostic (Admin uniquement)
+// Mettre à jour le statut, motif ou diagnostic (Admin uniquement - vérifié par middleware)
 export const updateAppointmentStatus = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
-      return res.status(403).json({ message: "Accès interdit" });
-    }
-
+    // Les middlewares verifyToken et verifyAdmin ont déjà vérifié les permissions
     const updateData = {};
     
     if (req.body.status !== undefined) updateData.status = req.body.status;
@@ -122,7 +136,7 @@ export const updateAppointmentStatus = async (req, res) => {
       return res.status(404).json({ message: 'Rendez-vous non trouvé' });
     }
     
-    console.log('📝 Rendez-vous mis à jour :', updateData);
+    console.log('📝 Rendez-vous mis à jour par admin:', req.user.email, updateData);
     res.json(appointment);
   } catch (err) {
     console.error('❌ Erreur lors de la mise à jour :', err);
@@ -140,9 +154,53 @@ export const deleteAppointment = async (req, res) => {
     if (!deletedAppointment) {
       return res.status(404).json({ message: 'Rendez-vous non trouvé' });
     }
+    console.log('✅ Rendez-vous supprimé par admin:', req.user.email, 'ID:', id);
     res.status(200).json({ message: 'Rendez-vous supprimé avec succès' });
   } catch (error) {
     console.error('Erreur suppression rendez-vous:', error);
     res.status(500).json({ message: 'Erreur serveur lors de la suppression' });
+  }
+};
+
+// Annuler un rendez-vous (Utilisateur propriétaire ou Admin)
+export const cancelAppointment = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+  const userRole = req.user.role;
+
+  try {
+    // Trouver le rendez-vous
+    const appointment = await Appointment.findById(id);
+    if (!appointment) {
+      return res.status(404).json({ message: 'Rendez-vous non trouvé' });
+    }
+
+    // Vérifier que l'utilisateur peut annuler ce RDV
+    if (userRole !== 'admin' && appointment.userId.toString() !== userId) {
+      console.log('❌ Tentative d\'annulation non autorisée:', {
+        appointmentUserId: appointment.userId,
+        requestUserId: userId,
+        userRole
+      });
+      return res.status(403).json({ 
+        message: 'Vous ne pouvez annuler que vos propres rendez-vous' 
+      });
+    }
+
+    // Mettre à jour le statut à "annulé"
+    const updatedAppointment = await Appointment.findByIdAndUpdate(
+      id,
+      { status: 'annulé' },
+      { new: true }
+    );
+
+    console.log('✅ Rendez-vous annulé par utilisateur:', req.user.email, 'ID:', id);
+    res.status(200).json({ 
+      message: 'Rendez-vous annulé avec succès',
+      appointment: updatedAppointment
+    });
+  } catch (error) {
+    console.error('Erreur annulation rendez-vous:', error);
+    res.status(500).json({ message: 'Erreur serveur lors de l\'annulation' });
   }
 };

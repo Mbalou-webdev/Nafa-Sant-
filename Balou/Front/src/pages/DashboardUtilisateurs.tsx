@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Calendar, Clock, User, FileText, Bell } from 'lucide-react';
+import { Calendar, Clock, User, FileText, Bell, CheckCircle, AlertCircle, XCircle, Info } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface Appointment {
@@ -9,7 +9,7 @@ interface Appointment {
   doctor: string;
   date: string;
   time: string;
-  status: 'confirmed' | 'pending' | 'cancelled';
+  status: 'confirmed' | 'pending' | 'cancelled' | 'confirmé' | 'en attente' | 'annulé' | string;
   notes?: string;
   motif?: string;
   diagnostic?: string;
@@ -68,14 +68,32 @@ const DashboardUtilisateurs: React.FC = () => {
   const cancelAppointment = async (appointmentId: string) => {
     const token = localStorage.getItem('token');
     try {
+      console.log('🚫 Annulation du rendez-vous:', appointmentId);
+      
+      // Utiliser la nouvelle route sécurisée d'annulation
       await axios.patch(
-        `http://localhost:5000/api/appointments/${appointmentId}`,
-        { status: 'cancelled' },
-        { headers: { Authorization: `Bearer ${token}` } }
+        `http://localhost:5000/api/appointments/${appointmentId}/cancel`,
+        {}, // Corps vide, le statut est géré côté serveur
+        { 
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          } 
+        }
       );
-      setAppointments(prev => prev.map(apt => apt._id === appointmentId ? { ...apt, status: 'cancelled' } : apt));
-    } catch (err) {
-      console.error("Erreur annulation rendez-vous :", err);
+      
+      // Mettre à jour l'état local
+      setAppointments(prev => prev.map(apt => 
+        apt._id === appointmentId ? { ...apt, status: 'annulé' } : apt
+      ));
+      
+      console.log('✅ Rendez-vous annulé avec succès');
+    } catch (err: any) {
+      console.error("Erreur annulation rendez-vous :", err.response?.data || err.message);
+      
+      // Afficher un message d'erreur approprié
+      const errorMessage = err.response?.data?.message || "Erreur lors de l'annulation du rendez-vous";
+      alert(errorMessage);
     }
   };
 
@@ -89,19 +107,65 @@ const DashboardUtilisateurs: React.FC = () => {
 
   const getStatusColor = (status: string) => {
     switch(status) {
-      case 'confirmed': return 'bg-green-100 text-green-800';
-      case 'pending': return 'bg-yellow-100 text-yellow-800';
-      case 'cancelled': return 'bg-red-100 text-red-800';
-      default: return '';
+      case 'confirmed': 
+      case 'confirmé': 
+        return 'bg-green-100 text-green-800 border-green-200';
+      case 'pending': 
+      case 'en attente':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'cancelled': 
+      case 'annulé':
+        return 'bg-red-100 text-red-800 border-red-200';
+      default: 
+        return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
 
   const getStatusText = (status: string) => {
     switch(status) {
-      case 'confirmed': return 'Confirmé';
-      case 'pending': return 'En attente';
-      case 'cancelled': return 'Annulé';
-      default: return '';
+      case 'confirmed': 
+      case 'confirmé': 
+        return 'Confirmé';
+      case 'pending': 
+      case 'en attente':
+        return 'En attente de confirmation';
+      case 'cancelled': 
+      case 'annulé':
+        return 'Annulé';
+      default: 
+        return status || 'Non défini';
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch(status) {
+      case 'confirmed': 
+      case 'confirmé': 
+        return <CheckCircle className="h-4 w-4" />;
+      case 'pending': 
+      case 'en attente':
+        return <AlertCircle className="h-4 w-4" />;
+      case 'cancelled': 
+      case 'annulé':
+        return <XCircle className="h-4 w-4" />;
+      default: 
+        return <Info className="h-4 w-4" />;
+    }
+  };
+
+  const getStatusMessage = (status: string) => {
+    switch(status) {
+      case 'confirmed': 
+      case 'confirmé': 
+        return 'Votre rendez-vous est confirmé. Veuillez vous présenter à l\'heure prévue.';
+      case 'pending': 
+      case 'en attente':
+        return 'Votre demande de rendez-vous a été reçue. Vous recevrez une confirmation sous peu.';
+      case 'cancelled': 
+      case 'annulé':
+        return 'Ce rendez-vous a été annulé. Contactez-nous pour reprogrammer.';
+      default: 
+        return 'Statut en cours de traitement.';
     }
   };
 
@@ -171,26 +235,80 @@ const DashboardUtilisateurs: React.FC = () => {
         <div className="flex-1">
           {/* Vue d'ensemble */}
           {activeTab === 'overview' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-lg shadow-sm flex items-center">
-                <div className="bg-blue-100 p-3 rounded-full"><Calendar className="h-6 w-6 text-blue-600" /></div>
-                <div className="ml-4">
-                  <p className="text-sm text-gray-600">Prochain RDV</p>
-                  <p className="text-lg font-semibold">{appointments.filter(a => a.status !== 'cancelled')[0]?.date || 'Aucun'}</p>
+            <div className="space-y-6">
+              {/* Notifications de statut */}
+              {appointments.filter(apt => apt.status === 'pending' || apt.status === 'en attente').length > 0 && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="flex items-center">
+                    <AlertCircle className="h-5 w-5 text-yellow-600 mr-2" />
+                    <div>
+                      <h4 className="text-sm font-medium text-yellow-800">
+                        Rendez-vous en attente de confirmation
+                      </h4>
+                      <p className="text-sm text-yellow-700 mt-1">
+                        Vous avez {appointments.filter(apt => apt.status === 'pending' || apt.status === 'en attente').length} rendez-vous en attente de confirmation. Nous vous contacterons bientôt.
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="bg-white p-6 rounded-lg shadow-sm flex items-center">
-                <div className="bg-green-100 p-3 rounded-full"><Clock className="h-6 w-6 text-green-600" /></div>
-                <div className="ml-4">
-                  <p className="text-sm text-gray-600">RDV Total</p>
-                  <p className="text-lg font-semibold">{appointments.length}</p>
+              )}
+
+              {/* Rendez-vous confirmés à venir */}
+              {appointments.filter(apt => 
+                (apt.status === 'confirmed' || apt.status === 'confirmé') && 
+                new Date(apt.date) > new Date()
+              ).length > 0 && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-center">
+                    <CheckCircle className="h-5 w-5 text-green-600 mr-2" />
+                    <div>
+                      <h4 className="text-sm font-medium text-green-800">
+                        Rendez-vous confirmés
+                      </h4>
+                      <p className="text-sm text-green-700 mt-1">
+                        Vous avez {appointments.filter(apt => 
+                          (apt.status === 'confirmed' || apt.status === 'confirmé') && 
+                          new Date(apt.date) > new Date()
+                        ).length} rendez-vous confirmés à venir. N'oubliez pas vos rendez-vous !
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="bg-white p-6 rounded-lg shadow-sm flex items-center">
-                <div className="bg-purple-100 p-3 rounded-full"><FileText className="h-6 w-6 text-purple-600" /></div>
-                <div className="ml-4">
-                  <p className="text-sm text-gray-600">Consultations</p>
-                  <p className="text-lg font-semibold">{medicalRecords.length}</p>
+              )}
+
+              {/* Statistiques */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-white p-6 rounded-lg shadow-sm flex items-center">
+                  <div className="bg-blue-100 p-3 rounded-full"><Calendar className="h-6 w-6 text-blue-600" /></div>
+                  <div className="ml-4">
+                    <p className="text-sm text-gray-600">Prochain RDV</p>
+                    <p className="text-lg font-semibold">
+                      {(() => {
+                        const nextAppt = appointments
+                          .filter(a => (a.status === 'confirmed' || a.status === 'confirmé') && new Date(a.date) > new Date())
+                          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+                        return nextAppt ? new Date(nextAppt.date).toLocaleDateString('fr-FR') : 'Aucun';
+                      })()}
+                    </p>
+                  </div>
+                </div>
+                <div className="bg-white p-6 rounded-lg shadow-sm flex items-center">
+                  <div className="bg-green-100 p-3 rounded-full"><CheckCircle className="h-6 w-6 text-green-600" /></div>
+                  <div className="ml-4">
+                    <p className="text-sm text-gray-600">RDV Confirmés</p>
+                    <p className="text-lg font-semibold">
+                      {appointments.filter(a => a.status === 'confirmed' || a.status === 'confirmé').length}
+                    </p>
+                  </div>
+                </div>
+                <div className="bg-white p-6 rounded-lg shadow-sm flex items-center">
+                  <div className="bg-yellow-100 p-3 rounded-full"><AlertCircle className="h-6 w-6 text-yellow-600" /></div>
+                  <div className="ml-4">
+                    <p className="text-sm text-gray-600">En Attente</p>
+                    <p className="text-lg font-semibold">
+                      {appointments.filter(a => a.status === 'pending' || a.status === 'en attente').length}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -210,33 +328,116 @@ const DashboardUtilisateurs: React.FC = () => {
               </div>
 
               {appointments.length === 0 ? (
-                <p className="text-gray-600">Vous n'avez aucun rendez-vous.</p>
+                <div className="text-center py-8">
+                  <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600 text-lg">Vous n'avez aucun rendez-vous.</p>
+                  <p className="text-gray-500 text-sm">Cliquez sur le bouton ci-dessus pour prendre votre premier rendez-vous.</p>
+                </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-6">
                   {appointments.map((apt) => (
-                    <div key={apt._id} className="border border-gray-200 rounded-lg p-4 flex justify-between items-center">
-                      <div>
-                        <p><strong>Service :</strong> {apt.service}</p>
-                        <p><strong>Médecin :</strong> {apt.doctor}</p>
-                        <p><strong>Date :</strong> {apt.date}</p>
-                        <p><strong>Heure :</strong> {apt.time}</p>
-                        {apt.motif && <p><strong>Motif :</strong> {apt.motif}</p>}
-                        {apt.notes && <p><strong>Notes :</strong> {apt.notes}</p>}
-                        {apt.diagnostic && <p><strong>Diagnostic :</strong> {apt.diagnostic}</p>}
+                    <div key={apt._id} className="border border-gray-200 rounded-lg p-6 hover:shadow-lg transition-shadow">
+                      {/* Header avec statut */}
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex-1">
+                          <h4 className="text-lg font-semibold text-gray-900 mb-2">{apt.service}</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                            <div className="flex items-center">
+                              <User className="h-4 w-4 text-gray-400 mr-2" />
+                              <span><strong>Médecin :</strong> {apt.doctor}</span>
+                            </div>
+                            <div className="flex items-center">
+                              <Calendar className="h-4 w-4 text-gray-400 mr-2" />
+                              <span><strong>Date :</strong> {new Date(apt.date).toLocaleDateString('fr-FR', { 
+                                weekday: 'long', 
+                                year: 'numeric', 
+                                month: 'long', 
+                                day: 'numeric' 
+                              })}</span>
+                            </div>
+                            <div className="flex items-center">
+                              <Clock className="h-4 w-4 text-gray-400 mr-2" />
+                              <span><strong>Heure :</strong> {apt.time}</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Badge de statut amélioré */}
+                        <div className="ml-4">
+                          <div className={`inline-flex items-center px-3 py-2 rounded-full text-sm font-medium border ${getStatusColor(apt.status)}`}>
+                            {getStatusIcon(apt.status)}
+                            <span className="ml-2">{getStatusText(apt.status)}</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex flex-col items-end space-y-2">
-                        <span className={`px-2 py-1 rounded text-sm font-medium ${getStatusColor(apt.status)}`}>
-                          {getStatusText(apt.status)}
-                        </span>
-                        {apt.status !== 'cancelled' && (
+
+                      {/* Message d'information sur le statut */}
+                      <div className={`p-3 rounded-lg mb-4 ${
+                        apt.status === 'confirmed' || apt.status === 'confirmé' ? 'bg-green-50 border border-green-200' :
+                        apt.status === 'pending' || apt.status === 'en attente' ? 'bg-yellow-50 border border-yellow-200' :
+                        'bg-red-50 border border-red-200'
+                      }`}>
+                        <div className="flex items-start">
+                          <div className={`mt-0.5 ${
+                            apt.status === 'confirmed' || apt.status === 'confirmé' ? 'text-green-600' :
+                            apt.status === 'pending' || apt.status === 'en attente' ? 'text-yellow-600' :
+                            'text-red-600'
+                          }`}>
+                            {getStatusIcon(apt.status)}
+                          </div>
+                          <p className={`ml-2 text-sm ${
+                            apt.status === 'confirmed' || apt.status === 'confirmé' ? 'text-green-700' :
+                            apt.status === 'pending' || apt.status === 'en attente' ? 'text-yellow-700' :
+                            'text-red-700'
+                          }`}>
+                            {getStatusMessage(apt.status)}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Détails supplémentaires */}
+                      {(apt.motif || apt.notes || apt.diagnostic) && (
+                        <div className="border-t pt-4">
+                          <h5 className="text-sm font-medium text-gray-700 mb-2">Détails supplémentaires :</h5>
+                          <div className="space-y-2 text-sm">
+                            {apt.motif && (
+                              <div className="flex">
+                                <span className="font-medium text-gray-600 w-20">Motif :</span>
+                                <span className="text-gray-800">{apt.motif}</span>
+                              </div>
+                            )}
+                            {apt.notes && (
+                              <div className="flex">
+                                <span className="font-medium text-gray-600 w-20">Notes :</span>
+                                <span className="text-gray-800">{apt.notes}</span>
+                              </div>
+                            )}
+                            {apt.diagnostic && (
+                              <div className="flex">
+                                <span className="font-medium text-gray-600 w-20">Diagnostic :</span>
+                                <span className="text-gray-800">{apt.diagnostic}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      {(apt.status !== 'cancelled' && apt.status !== 'annulé') && (
+                        <div className="border-t pt-4 flex justify-end">
                           <button
-                            onClick={() => cancelAppointment(apt._id)}
-                            className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 transition-colors text-sm"
+                            onClick={() => {
+                              if (window.confirm('Voulez-vous vraiment annuler ce rendez-vous ?')) {
+                                cancelAppointment(apt._id);
+                              }
+                            }}
+                            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm font-medium flex items-center"
                           >
-                            Annuler
+                            <XCircle className="h-4 w-4 mr-1" />
+                            Annuler le rendez-vous
                           </button>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

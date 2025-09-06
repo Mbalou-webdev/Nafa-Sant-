@@ -20,10 +20,14 @@ interface ConfirmationModalProps {
 }
 
 const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, onConfirm, userName }) => {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
+  console.log('🔍 Modal render - isOpen:', isOpen, 'userName:', userName);
+  
+  // Toujours rendre le contenu pour diagnostic
+  const modalContent = (
+    <div 
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200"
+      style={{ zIndex: 9999 }}
+    >
       <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl transform animate-in zoom-in-95 duration-200">
         <div className="flex items-center justify-center w-16 h-16 mx-auto bg-red-100 rounded-full mb-6">
           <AlertTriangle className="w-8 h-8 text-red-600" />
@@ -37,13 +41,19 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, 
         </p>
         <div className="flex gap-4">
           <button
-            onClick={onClose}
+            onClick={() => {
+              console.log('❌ Annulation cliquée');
+              onClose();
+            }}
             className="flex-1 px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
           >
             Annuler
           </button>
           <button
-            onClick={onConfirm}
+            onClick={() => {
+              console.log('✅ Confirmation cliquée pour:', userName);
+              onConfirm();
+            }}
             className="flex-1 px-6 py-3 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-lg"
           >
             Supprimer
@@ -52,6 +62,16 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, 
       </div>
     </div>
   );
+
+  console.log('🎭 Modal va retourner:', isOpen ? 'CONTENU' : 'NULL');
+  
+  if (!isOpen) {
+    console.log('🚫 Modal fermée - ne s\'affiche pas');
+    return null;
+  }
+  
+  console.log('✅ Modal ouverte - affichage du contenu');
+  return modalContent;
 };
 
 const UserManagement: React.FC = () => {
@@ -69,12 +89,36 @@ const UserManagement: React.FC = () => {
     const fetchUsers = async () => {
       try {
         setLoading(true);
-        const res = await axios.get("http://localhost:5000/api/users");
+        const token = localStorage.getItem('token');
+        const userStr = localStorage.getItem('user');
+        
+        if (!token) {
+          setError('Vous devez être connecté pour accéder à cette page.');
+          return;
+        }
+
+        // Vérifier le rôle admin
+        if (userStr) {
+          const user = JSON.parse(userStr);
+          if (user.role !== 'admin') {
+            setError('Accès refusé. Droits administrateur requis pour cette page.');
+            return;
+          }
+          console.log('✅ Accès autorisé pour admin:', user.email);
+        }
+
+        const res = await axios.get("http://localhost:5000/api/users", {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
         setUsers(res.data);
         setError("");
-      } catch (err) {
+        console.log('👥 Utilisateurs chargés:', res.data.length);
+      } catch (err: any) {
         console.error("❌ Erreur de récupération des utilisateurs :", err);
-        setError("Erreur lors de la récupération des utilisateurs.");
+        const errorMessage = err.response?.data?.message || "Erreur lors de la récupération des utilisateurs.";
+        setError(errorMessage);
       } finally {
         setLoading(false);
       }
@@ -89,19 +133,60 @@ const UserManagement: React.FC = () => {
 
   // Fonction de suppression d'un utilisateur
   const deleteUser = async (user: User) => {
+    console.log('🗑️ Tentative de suppression de:', user);
     try {
-      await axios.delete(`http://localhost:5000/api/users/${user._id}`);
+      const token = localStorage.getItem('token');
+      const userStr = localStorage.getItem('user');
+      
+      if (!token) {
+        console.error('❌ Token manquant');
+        alert('Vous devez être connecté pour effectuer cette action.');
+        return;
+      }
+
+      // Vérifier le rôle admin
+      if (userStr) {
+        const currentUser = JSON.parse(userStr);
+        if (currentUser.role !== 'admin') {
+          console.error('❌ Accès refusé - pas admin');
+          alert('Accès refusé. Droits administrateur requis.');
+          return;
+        }
+      }
+
+      console.log('🔑 Token trouvé:', token.substring(0, 20) + '...');
+      console.log('🌐 URL de suppression:', `http://localhost:5000/api/users/${user._id}`);
+
+      await axios.delete(`http://localhost:5000/api/users/${user._id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      console.log('✅ Suppression réussie');
       setUsers(prev => prev.filter(u => u._id !== user._id));
       showSuccess(`${user.firstName} ${user.lastName} a été supprimé avec succès.`);
       setDeleteModal({ isOpen: false, user: null });
     } catch (error: any) {
       console.error('❌ Erreur lors de la suppression :', error.response?.data || error.message);
-      alert('Erreur lors de la suppression de l\'utilisateur.');
+      const errorMessage = error.response?.data?.message || 'Erreur lors de la suppression de l\'utilisateur.';
+      alert(errorMessage);
     }
   };
 
   const handleDeleteClick = (user: User) => {
-    setDeleteModal({ isOpen: true, user });
+    console.log('🎯 handleDeleteClick appelé avec user:', user);
+    console.log('📋 État deleteModal AVANT modification:', deleteModal);
+    
+    const newState = { isOpen: true, user };
+    console.log('🔄 Nouveau état deleteModal:', newState);
+    
+    setDeleteModal(newState);
+    
+    // Vérification asynchrone de l'état
+    setTimeout(() => {
+      console.log('⏰ État deleteModal APRÈS modification (async):', deleteModal);
+    }, 100);
   };
 
   const filteredUsers = users.filter(
@@ -193,8 +278,18 @@ const UserManagement: React.FC = () => {
       {/* Confirmation Modal */}
       <ConfirmationModal
         isOpen={deleteModal.isOpen}
-        onClose={() => setDeleteModal({ isOpen: false, user: null })}
-        onConfirm={() => { if (deleteModal.user) deleteUser(deleteModal.user); }}
+        onClose={() => {
+          console.log('🚪 Fermeture de la modal');
+          setDeleteModal({ isOpen: false, user: null });
+        }}
+        onConfirm={() => {
+          console.log('✅ Confirmation de suppression pour:', deleteModal.user);
+          if (deleteModal.user) {
+            deleteUser(deleteModal.user);
+          } else {
+            console.error('❌ Aucun utilisateur sélectionné pour suppression');
+          }
+        }}
         userName={deleteModal.user ? `${deleteModal.user.firstName} ${deleteModal.user.lastName}` : ''}
       />
     </div>

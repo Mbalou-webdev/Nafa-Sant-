@@ -4,7 +4,8 @@ import {
   getAppointments, 
   getUserAppointments, 
   updateAppointmentStatus, 
-  deleteAppointment 
+  deleteAppointment,
+  cancelAppointment
 } from '../controllers/AppointmentController.js';
 import { verifyToken, verifyAdmin } from '../middleware/authMiddleware.js';
 
@@ -20,9 +21,12 @@ router.get('/', verifyToken, verifyAdmin, getAppointments);
 router.get('/user/:userId', verifyToken, getUserAppointments);
 
 // Mettre à jour statut/motif/diagnostic d’un rendez-vous
-router.patch('/:id', verifyToken, updateAppointmentStatus);
+router.patch('/:id', verifyToken, verifyAdmin, updateAppointmentStatus);
 
-// Supprimer un rendez-vous
+// Supprimer un rendez-vous (Admin uniquement)
 router.delete('/:id', verifyToken, verifyAdmin, deleteAppointment);
+
+// Annuler un rendez-vous (Utilisateur propriétaire ou Admin)
+router.patch('/:id/cancel', verifyToken, cancelAppointment);
 
 export default router;
